@@ -18,7 +18,7 @@
 
 #define DATABASE_NAME   "banco.txt"
 #define INDEX_NAME      "index.txt"
-#define LISTA_REGISTROS "/Users/luanbatista/Desktop/Projetos/ori-trab-1/ori-trab-1/listaregistros.txt"
+#define LISTA_REGISTROS "/Users/luanbatista/Desktop/Projetos/ori-trab/ufscar-ori/listaregistros.txt"
 
 typedef struct HeaderFile {            // Estrutura para o cabeçalho do arquivo de dados
     int block_rrn_last;                // último bloco utilizado
@@ -58,9 +58,9 @@ int _initialized = 0;                  // Verifica se o arquivo foi carregado
  *  Atualiza o arquivo de dados com o cabeçalho atualizado
  */
 void updateBufferHeader() {
-    fseek(_databese, 0, SEEK_SET);
-    fwrite(_buffer_header, 1, sizeof(struct HeaderFile), _databese);
-    rewind(_databese);
+    fseek(_databese, 0, SEEK_SET);                                    // Move o ponteiro do arquivo para o inicio
+    fwrite(_buffer_header, 1, sizeof(struct HeaderFile), _databese);  // Atualiza o header do arquivo de acordo com o buffer
+    rewind(_databese);                                                // Atualiza o arquivo no disco
 }
 
 /*
@@ -68,12 +68,12 @@ void updateBufferHeader() {
  *    com espaço disponível, controlando o aproveitamento de espaço
  */
 int setBeginCurrentBlock() {
-    if(_buffer_header->free_next_rrn > 0) {
-        fseek(_databese, BLOCK_SIZE * _buffer_header->free_next_rrn, SEEK_SET);
-        return _buffer_header->free_next_rrn;
-    }else{
-        fseek(_databese, BLOCK_SIZE * _buffer_header->block_rrn_last, SEEK_SET);
-        return _buffer_header->block_rrn_last;
+    if(_buffer_header->free_next_rrn > 0) {                                     // Caso houve alguma remoção e ainda tenha espaço para reaproveitar
+        fseek(_databese, BLOCK_SIZE * _buffer_header->free_next_rrn, SEEK_SET); // Aponta o ponteiro para o bloco com espaço
+        return _buffer_header->free_next_rrn;                                   // retorno o RRN do bloco
+    }else{                                                                      // Caso contrário aponta para o último bloco
+        fseek(_databese, BLOCK_SIZE * _buffer_header->block_rrn_last, SEEK_SET);// Aponta o ponteiro para o último bloco
+        return _buffer_header->block_rrn_last;                                  // retorna o RRN do block
     }
 }
 
@@ -81,25 +81,25 @@ int setBeginCurrentBlock() {
  *  Posiciona o curso do arquivo de dados em um dados RRN de bloco
  */
 void setBlockRRN(int rrn) {
-    fseek(_databese, rrn * BLOCK_SIZE, SEEK_SET);
+    fseek(_databese, rrn * BLOCK_SIZE, SEEK_SET);                                // Posiciona o ponteiro de acordo com o RRN informado
 }
 
 /*
  *  Atualiza o header do arquivo de index
  */
 void updateBufferIndex() {
-    fseek(_index, 0, SEEK_SET);
-    fwrite(_buffer_index_header, 1, sizeof(struct HeaderIndex), _index);
-    rewind(_index);
+    fseek(_index, 0, SEEK_SET);                                                  // Aponta para o inicio do arquivo do index
+    fwrite(_buffer_index_header, 1, sizeof(struct HeaderIndex), _index);         // Salva o buffer do header no arquivo
+    rewind(_index);                                                              // Atualiza o arquivo no disco
 }
 
 /*
  *  Atualiza o arquivo de index com os dados do buffer
  */
 void updateIndex() {
-    fseek(_index, sizeof(struct HeaderIndex), SEEK_SET);
-    fwrite(_buffer_index, 1, sizeof(struct Index) * _buffer_index_header->count, _index);
-    rewind(_index);
+    fseek(_index, sizeof(struct HeaderIndex), SEEK_SET);                                  // Movo o ponteiro para o incio da área de dados do arquivo
+    fwrite(_buffer_index, 1, sizeof(struct Index) * _buffer_index_header->count, _index); // Atualiza o arquivo de index de acordo com o buffer
+    rewind(_index);                                                                       // Atualiza o arquivo no disco
 }
 
 /*
@@ -140,35 +140,33 @@ void debugMessage(char message[100]) {
  */
 int initialize () {
     
-    _databese = fopen(DATABASE_NAME, "w+b"); // Deve ser um arquivo binário de escrita e leitura
-    _index    = fopen(INDEX_NAME, "w+b");
-    if (_databese == NULL || _index == NULL) {
-        _initialized = 0;
-        fclose(_databese);
-        fclose(_index);
-        return -1;
+    _databese = fopen(DATABASE_NAME, "w+b");                  // Deve ser um arquivo binário de escrita e leitura
+    _index    = fopen(INDEX_NAME, "w+b");                     // Deve ser um arquivo binário de escrita e leitura
+    if (_databese == NULL || _index == NULL) {                // Verifica se os arquivos não foram criados
+        _initialized = 0;                                     // Seta a variável de controle como não inicializada
+        fclose(_databese);                                    // Fecha o arquivo
+        fclose(_index);                                       // Fecha o arquivo
+        return -1;                                            // Retorna -1 para indicar que a operação não ocorreu com sucesso
     }
     
-    _buffer_header = malloc(sizeof(struct HeaderFile));
-    _buffer_header->block_rrn_last  = 1;
-    _buffer_header->database_size   = 0;
-    _buffer_header->free_next_rrn   = -1;
+    _buffer_header = malloc(sizeof(struct HeaderFile));       // Cria o buffer do header do arquivo de dados
+    _buffer_header->block_rrn_last  = 1;                      // Inicia a contagem dos blocos a partir do RRN 1, pois o 0 é para o Header
+    _buffer_header->database_size   = 0;                      // Inicia a contagem de registros ativos em 0
+    _buffer_header->free_next_rrn   = -1;                     // Inicia com -1 para indicar que não tem blocos para reaproveitamento
     
-    updateBufferHeader();
+    updateBufferHeader();                                     // Atualiza o header do arquivo com base no buffer
     
-    // Cria um novo bloco de registros
-    Block *block = calloc(1, sizeof(struct Block));
+    Block *block = calloc(1, sizeof(struct Block));           // Cria um novo bloco de registros na inicialização
     
-    // Error
-    setBeginCurrentBlock();
-    fwrite(block, 1, BLOCK_SIZE, _databese);
-    rewind(_databese);
+    setBeginCurrentBlock();                                   // Posiciona o ponteiro do arquivo para o próximo bloco disponível
+    fwrite(block, 1, BLOCK_SIZE, _databese);                  // Escreve o bloco inicializado no arquivo
+    rewind(_databese);                                        // Atualiza o arquivo no disco
     
-    _buffer_index_header = malloc(sizeof(struct HeaderIndex));
-    _buffer_index_header->count = 0;
+    _buffer_index_header = malloc(sizeof(struct HeaderIndex));// Inicializa o buffer do header do index
+    _buffer_index_header->count = 0;                          // Inicia a contagem em 0
     
-    free(block);
-    return _initialized = 1;
+    free(block);                                              // Elimana o bloco vazio criado da memória
+    return _initialized = 1;                                  // retorna 1 para indicar que tudo está ok
 }
 
 /*
@@ -179,21 +177,21 @@ int search(int key, int begin, int end) {
     if (_buffer_index_header->count == 0)                  // Caso seja o primeiro index
         return -1;
     
-    int div = ceil(((double)end - begin) / 2);
+    int div = ceil(((double)end - begin) / 2);             // Calcula a posição central do bloco que vai ser percorrido
     
-    int currentKey = (_buffer_index + (begin + div))->key;
+    int currentKey = (_buffer_index + (begin + div))->key; // Captura no buffer de index a chave na posição central
     //printf("DEBUG || Current Key %i | div %i | begin %i | end %i | teste %f\n", currentKey, div, begin, end, ((double)1/2));
-    if (currentKey == key)
-        return (div + begin);
-    else if (begin >= end)
-        return -1;
-    else {
-        if (currentKey > key)
-            return search(key, begin, (begin+end)/2);
-        else
-            return search(key, end - ((end - begin) / 2), end);
+    if (currentKey == key)                                 // Verifica se é a chave procurada
+        return (div + begin);                              // Retorna a posição da chave atual
+    else if (begin >= end)                                 // Caso busca termine
+        return -1;                                         // Retorna -1 para indicar que a busca não encontrou
+    else {                                                 // Caso a busca deva continuar
+        if (currentKey > key)                              // Caso a chave atual seja maior que a chave pesquisada
+            return search(key, begin, (begin+end)/2);      // Avança para a esquerda
+        else                                               // Caso a chave atual seja menor que a chave pesquisada
+            return search(key, end - ((end - begin) / 2), end); // Avança para a direita
     }
-    return -1;
+    return -1;                                             // Retorna -1 para indicar que a busca não finalizou
 }
 
 /*
