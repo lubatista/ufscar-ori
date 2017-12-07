@@ -18,7 +18,7 @@
 
 #define DATABASE_NAME   "banco.txt"
 #define INDEX_NAME      "index.txt"
-#define LISTA_REGISTROS "/Users/luanbatista/Desktop/Projetos/ori-trab/ufscar-ori/listaregistros.txt"
+#define LISTA_REGISTROS "/Users/luanbatista/Desktop/Projetos/ori-trab-1/ufscar-ori/listaregistros.txt"
 
 typedef struct HeaderFile {            // Estrutura para o cabeçalho do arquivo de dados
     int block_rrn_last;                // último bloco utilizado
@@ -108,7 +108,7 @@ void updateIndex() {
 int loadHeaderIndexBuffer() {
     _buffer_index_header = malloc(sizeof(struct HeaderIndex));
     fseek(_index, 0, SEEK_SET);
-    printf("DEBUG || Header Index Lidos: %ld\n", fread(_buffer_index_header, 1, sizeof(struct HeaderIndex), _index));
+    //printf("DEBUG || Header Index Lidos: %ld\n", fread(_buffer_index_header, 1, sizeof(struct HeaderIndex), _index));
     return 1;
 }
 
@@ -119,7 +119,7 @@ int loadIndexBuffer() {
     int sizeBuffer = _buffer_index_header->count * sizeof(struct Index);
     _buffer_index = malloc(sizeBuffer);
     fseek(_index, sizeof(struct HeaderIndex), SEEK_SET);
-    printf("DEBUG || Lidos: %ld\n", fread(_buffer_index, 1, sizeBuffer, _index));
+    //printf("DEBUG || Lidos: %ld\n", fread(_buffer_index, 1, sizeBuffer, _index));
     return 1;
 }
 
@@ -259,7 +259,7 @@ int getInsertionPosition(int key, int begin,int end) {
     int div = ceil(((double)end - begin) / 2);                        // Calcula o posição central da lista
     
     int currentKey = (_buffer_index + (begin + div))->key;            // Captura o valor da chave central
-    printf("DEBUG || Current Key %i | div %i | begin %i | end %i | teste %f\n", currentKey, div, begin, end, ((double)1/2));
+    //printf("DEBUG || Current Key %i | div %i | begin %i | end %i | teste %f\n", currentKey, div, begin, end, ((double)1/2));
     
     if (currentKey == key)                                            // Se a chave atual for a chave procurada
         return -3;                                                    // -3 Index já inserido
@@ -364,40 +364,71 @@ int insert(Register *reg) {
 }
 
 /*
+ *  Insere um novo registro no arquivo de dados
+ */
+int edit(Register *reg) {
+    
+    if(!_initialized) return -1;                                     // Verifica se os arquivos foram carregados
+  
+    int position = search(reg->key, 0, _buffer_index_header->count-1);
+    
+    if (position < 0) return -1;
+      
+    setBlockRRN((_buffer_index+position)->rrn);
+    Block *block = malloc(sizeof(struct Block));
+    fread(block, 1, BLOCK_SIZE, _databese);
+    
+    for(int i=0; i<REGISTER_BLOCK; i++){
+        
+        if(block->regs[i].null == 1 && block->regs[i].key == reg->key) {
+            memcpy(&block->regs[i], reg, sizeof(struct Register));
+            break;
+        }
+    }
+    setBlockRRN((_buffer_index+position)->rrn);
+    fwrite(block, 1, BLOCK_SIZE, _databese);                         // Atualiza o bloco de dados no arquivo
+    free(block);                                                     // Limpa a memória removendo o block
+    return 1;
+}
+
+/*
  *   Importa a lista de registros já preenchida
  */
 int importList (int number) {
     FILE *import = fopen(LISTA_REGISTROS, "r");
     
     if (import == NULL) {
-        printf("Não foi possível abrir o arquivo...");
+        printf("Não foi possível abrir o arquivo...\n");
         return -1;
     }
     
-    char buffer[200];
-    int count = 0;
-    int i, v=0, n=0;
-    char tempKey[10];
-    Register *reg = calloc(1, sizeof(struct Register));
+    char buffer[200];                                 // Buffer que carrega os bytes de cada linha do arquivo
+    int count = 0;                                    // Contador de registros que já foram importados
+    int i, v=0, n=0;                                  // Variáveis de controle 
+    char tempKey[10];                                 // Variável que guarda o chave antes de converter para inteiro
     
-    while (fgets(buffer, sizeof(buffer), import) != NULL && number > count) {
+    while (fgets(buffer, sizeof(buffer), import) != NULL && number > count) {                
         
-        for(i = 0; i<strlen(buffer); i++){
-            if(buffer[i] == ',')
-                v = i;
-            if(buffer[i] == '\n') {
-                n = i-2;
-                break;
+        Register *reg = calloc(1, sizeof(struct Register));
+
+        for(i = 0; i<strlen(buffer); i++){            // Percorre cada byte da linha
+            if(buffer[i] == ',')                      // Verifica se encontrou a virgula que separa a chave do nome
+                v = i;                                // Registra a posição da virgula
+            if(buffer[i] == '\n') {                   // Verifica se encontrou o fim da linha
+                n = i-2;                              // Registra a posição do último byte ignorando a quebra de linha
+                break;                                // Finaliza a execução do FOR
             }
         }
-        memcpy(tempKey, buffer, sizeof(char)*v);
-        reg->key  = atoi(tempKey);
-        memcpy(reg->name, buffer+v+1, sizeof(char) * (n-v));
-        insert(reg);
-        count++;
+        printf("%s\n", buffer);
+        memcpy(tempKey, buffer, sizeof(char)*v);             // Copia somento a chave para a variável temporária
+        reg->key  = atoi(tempKey);                           // Converte a chave para inteiro e armazena no registro
+        memcpy(reg->name, buffer+v+1, sizeof(char) * (n-v)); // Armazena somento o nome no registro
+        insert(reg);                                         // Insere o registro no arquivo
+        free(reg);                                           // Limpa o registro da memória primária
+        count++;                                             // Incremente o contador de registros inseridos
     }
     
-    fclose(import);
+    fclose(import);                                          // Fecha o arquivo de importação
     return 1;
 }
 
@@ -482,16 +513,17 @@ void listIndexAll() {
 void showOption() {
     printf("      PROJETO ORI - MANIPULAÇÃO DE ARQUIVOS \n");
     printf("---------------------------------------------------\n");
-    printf("0 - Novo arquivo vázio\n");
-    printf("1 - Inserir um novo registro\n");
-    printf("2 - Remover um registro\n");
-    printf("3 - Listar Registros\n");
-    printf("4 - Buscar um registro\n");
-    printf("5 - Compactar arquivo de dados\n");
-    printf("6 - Importar Lista\n");
-    printf("7 - Listar estrutura de blocos\n");
-    printf("8 - Listar estrutura de indices\n");
-    printf("9 - Sair\n");
+    printf(" 0 - Novo arquivo vázio\n");
+    printf(" 1 - Inserir um novo registro\n");
+    printf(" 2 - Remover um registro\n");
+    printf(" 3 - Listar Registros\n");
+    printf(" 4 - Buscar um registro\n");
+    printf(" 5 - Compactar arquivo de dados\n");
+    printf(" 6 - Importar Lista\n");
+    printf(" 7 - Listar estrutura de blocos\n");
+    printf(" 8 - Listar estrutura de indices\n");
+    printf(" 9 - Editar um registro\n");
+    printf("10 - Sair\n");
 }
 
 /*
@@ -575,9 +607,9 @@ int main () {
     char confirm;
     Register *reg = malloc(sizeof(struct Register));
     initialize();
-    showOption();
-    
+
     while (control >= 0) {
+        showOption();
         scanf("%i", &control);
         
         switch (control) {
@@ -613,13 +645,19 @@ int main () {
                 printf("--------------------------------------------------\n");
                 printf("Digite a chave: ");
                 scanf("%u", &reg->key);
-                removeRegistroByKey(reg->key, reg);
+                if(removeRegistroByKey(reg->key, reg) < 0)
+                    printf("Não foi possível remover o registro\n");
+                else
+                    printf("Registro removido\n");
+                printf("--------------------------------------------------------\n");
+                printf("Pressione qualquer tecla para sair");
                 break;
             case 3:
                 clearDisplay();
                 printf("   LISTA DE REGISTROS ATIVOS\n");
                 printf("--------------------------------------------------\n");
                 listAll();
+                printf("--------------------------------------------------------\n");
                 printf("Pressione qualquer tecla para sair");
                 fpurge(stdin);
                 scanf("%c", &confirm);
@@ -634,6 +672,8 @@ int main () {
                     printf("Key: %i - Nome: %s\n", reg->key, reg->name);
                 else
                     printf("Registro não localizado..");
+                printf("--------------------------------------------------------\n");
+                printf("Pressione qualquer tecla para sair");
                 fpurge(stdin);
                 scanf("%c", &confirm);
                 break;
@@ -655,6 +695,7 @@ int main () {
                 importList(control);
                 printf("--------------------------------------------------\n");
                 printf("Pressione qualquer tecla para sair");
+                fpurge(stdin);
                 scanf("%c", &confirm);
                 break;
             case 7:
@@ -662,9 +703,9 @@ int main () {
                 printf("  LISTA BLOCOS\n");
                 printf("--------------------------------------------------------\n");
                 listAllBlocks();
-                fpurge(stdin);
                 printf("--------------------------------------------------------\n");
                 printf("Pressione qualquer tecla para sair");
+                fpurge(stdin);
                 scanf("%c", &confirm);
                 break;
             case 8:
@@ -672,12 +713,33 @@ int main () {
                 printf("  LISTA INDICES\n");
                 printf("--------------------------------------------------------\n");
                 listIndexAll();
-                fpurge(stdin);
                 printf("--------------------------------------------------------\n");
                 printf("Pressione qualquer tecla para sair");
+                fpurge(stdin);
                 scanf("%c", &confirm);
                 break;
             case 9:
+                clearDisplay();
+                printf("  EDIÇÃO DE REGISTRO\n");
+                printf("--------------------------------------------------\n");
+                printf("Digite a chave: ");
+                scanf("%u", &reg->key);
+                if(findRegistroByKey(reg->key, reg) > 0) {
+                    printf("Key: %i - Nome: %s\n", reg->key, reg->name);
+                    printf("Digite o novo nome: ");
+                    scanf("%s", reg->name);
+                    if(edit(reg) < 0)
+                        printf("Não foi possível alterar o registro\n");
+                    else
+                        printf("Registro alterado\n");
+                } else
+                    printf("Registro não localizado..");
+                printf("--------------------------------------------------------\n");
+                printf("Pressione qualquer tecla para sair");
+                fpurge(stdin);
+                scanf("%c", &confirm);
+                break;
+            case 10:
                 control = -1;
                 break;
             default:
@@ -685,7 +747,6 @@ int main () {
         }
         fpurge(stdin);
         clearDisplay();
-        showOption();
     }
     
     fclose(_databese);
